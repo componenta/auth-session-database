@@ -52,10 +52,6 @@ final readonly class DatabaseAuthSessionHousekeeper
         $remaining = $limit - $deleted;
         $query = $this->database->select('uuid');
 
-        if (!$query instanceof SelectQuery) {
-            throw new \LogicException('Cycle must provide a SelectQuery.');
-        }
-
         $rows = $query->from($this->config->sessionTable)
             ->where(static function (SelectQuery $query) use ($now): void {
                 $query->where('revoked_at', '!=', null)
