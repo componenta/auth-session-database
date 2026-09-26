@@ -84,6 +84,60 @@ final class DatabaseAuthSessionManagerTest extends TestCase
         self::assertNull($manager->resume($rotated->credential));
     }
 
+    public function testReauthenticationResetsIdleAndOverallTimeouts(): void
+    {
+        self::requireSqlite();
+        $database = SqliteDatabaseFixture::create();
+        $clock = new FrozenClock('2030-01-01T00:00:00+00:00', 'UTC');
+        $manager = new DatabaseAuthSessionManager(
+            $database,
+            new UuidFactory(),
+            $clock,
+            new CredentialKeyring(
+                'k1',
+                ['k1' => str_repeat('k', 32)],
+            ),
+        );
+        $grant = $manager->create(
+            (new UuidFactory())->generate(),
+            new AuthenticationEvidence(['password'], ['knowledge']),
+            new AuthSessionPolicy(1800, 28800),
+        );
+
+        $clock->advance('+2 hours');
+
+        $rotated = $manager->rotate(
+            $grant->session,
+            new AuthenticationEvidence(
+                ['webauthn'],
+                ['phishing_resistant', 'user_verified'],
+            ),
+            RotationReason::Reauthentication,
+        );
+
+        self::assertSame(
+            '2030-01-01T02:30:00+00:00',
+            $rotated->session->idleExpiresAt->format(DATE_ATOM),
+        );
+        self::assertSame(
+            '2030-01-01T10:00:00+00:00',
+            $rotated->session->absoluteExpiresAt->format(DATE_ATOM),
+        );
+
+        $clock->advance('+1 hour');
+
+        $rotatedAgain = $manager->rotate(
+            $rotated->session,
+            new AuthenticationEvidence(['totp'], ['possession']),
+            RotationReason::Reauthentication,
+        );
+
+        self::assertSame(
+            '2030-01-01T11:00:00+00:00',
+            $rotatedAgain->session->absoluteExpiresAt->format(DATE_ATOM),
+        );
+    }
+
     public function testBulkRevocationPersistsExplicitReason(): void
     {
         self::requireSqlite();
