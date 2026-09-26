@@ -36,10 +36,11 @@ final class VendorDatabaseIntegrationTest extends TestCase
             self::keyring(),
         );
         $subject = (new UuidFactory())->generate();
+        $policy = new AuthSessionPolicy(1800, 28800);
         $grant = $manager->create(
             $subject,
             new AuthenticationEvidence(['otp.email']),
-            new AuthSessionPolicy(1800, 28800),
+            $policy,
         );
 
         self::assertNotNull($manager->resume($grant->credential));
@@ -52,6 +53,7 @@ final class VendorDatabaseIntegrationTest extends TestCase
                 ['user_verified', 'phishing_resistant'],
             ),
             RotationReason::Reauthentication,
+            $policy,
         );
 
         self::assertTrue(
