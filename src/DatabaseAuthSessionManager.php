@@ -242,25 +242,45 @@ final readonly class DatabaseAuthSessionManager implements
             $absoluteExpiresAt = $this->date(
                 self::stringValue($row, 'absolute_expires_at'),
             );
-            $idleWindow = $policy !== null
-                ? $policy->idleTimeout
-                : max(
-                    1,
-                    $this->date(self::stringValue($row, 'idle_expires_at'))->getTimestamp()
-                        - $this->date(self::stringValue($row, 'last_active_at'))->getTimestamp(),
-                );
 
-            if ($policy !== null) {
-                $policyAbsolute = $now->modify(
+            if ($reason === RotationReason::Reauthentication) {
+                if ($policy === null) {
+                    throw new \InvalidArgumentException(
+                        'Reauthentication rotation requires an authentication-session policy.',
+                    );
+                }
+
+                $idleWindow = $policy->idleTimeout;
+                $absoluteExpiresAt = $now->modify(
                     sprintf('+%d seconds', $policy->absoluteTimeout),
                 );
+            } else {
+                $idleWindow = $policy !== null
+                    ? $policy->idleTimeout
+                    : max(
+                        1,
+                        $this->date(
+                            self::stringValue($row, 'idle_expires_at'),
+                        )->getTimestamp()
+                            - $this->date(
+                                self::stringValue($row, 'last_active_at'),
+                            )->getTimestamp(),
+                    );
 
-                if ($policyAbsolute < $absoluteExpiresAt) {
-                    $absoluteExpiresAt = $policyAbsolute;
+                if ($policy !== null) {
+                    $policyAbsolute = $now->modify(
+                        sprintf('+%d seconds', $policy->absoluteTimeout),
+                    );
+
+                    if ($policyAbsolute < $absoluteExpiresAt) {
+                        $absoluteExpiresAt = $policyAbsolute;
+                    }
                 }
             }
 
-            $idleExpiresAt = $now->modify(sprintf('+%d seconds', $idleWindow));
+            $idleExpiresAt = $now->modify(
+                sprintf('+%d seconds', $idleWindow),
+            );
 
             if ($idleExpiresAt > $absoluteExpiresAt) {
                 $idleExpiresAt = $absoluteExpiresAt;

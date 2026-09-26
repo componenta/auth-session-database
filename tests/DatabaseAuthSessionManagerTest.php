@@ -98,10 +98,11 @@ final class DatabaseAuthSessionManagerTest extends TestCase
                 ['k1' => str_repeat('k', 32)],
             ),
         );
+        $policy = new AuthSessionPolicy(1800, 28800);
         $grant = $manager->create(
             (new UuidFactory())->generate(),
             new AuthenticationEvidence(['password'], ['knowledge']),
-            new AuthSessionPolicy(1800, 28800),
+            $policy,
         );
 
         $clock->advance('+10 minutes');
@@ -113,6 +114,7 @@ final class DatabaseAuthSessionManagerTest extends TestCase
                 ['phishing_resistant', 'user_verified'],
             ),
             RotationReason::Reauthentication,
+            $policy,
         );
 
         self::assertSame(
@@ -130,6 +132,7 @@ final class DatabaseAuthSessionManagerTest extends TestCase
             $rotated->session,
             new AuthenticationEvidence(['totp'], ['possession']),
             RotationReason::Reauthentication,
+            $policy,
         );
 
         self::assertSame(
