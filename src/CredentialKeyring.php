@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Componenta\Auth\Session\Database;
 
+use Componenta\Auth\Session\PreAuthenticationCredential;
+use Componenta\Auth\Session\PreAuthenticationRequestToken;
 use Componenta\Auth\Session\SessionCredential;
 
 final readonly class CredentialKeyring
@@ -47,16 +49,10 @@ final readonly class CredentialKeyring
         SessionCredential $credential,
         ?string $keyId = null,
     ): string {
-        $id = $keyId ?? $this->currentKeyId;
-        $key = $this->keys[$id]
-            ?? throw new \InvalidArgumentException(
-                'Unknown session credential key ID.',
-            );
-
-        return hash_hmac(
-            'sha256',
-            "componenta-auth-session-v1\0" . $credential->toString(),
-            $key,
+        return $this->hashValue(
+            'componenta-auth-session-v1',
+            $credential->toString(),
+            $keyId,
         );
     }
 
@@ -65,12 +61,86 @@ final readonly class CredentialKeyring
         #[\SensitiveParameter]
         SessionCredential $credential,
     ): array {
+        return $this->candidateValues(
+            'componenta-auth-session-v1',
+            $credential->toString(),
+        );
+    }
+
+    public function hashPreAuthenticationCredential(
+        #[\SensitiveParameter]
+        PreAuthenticationCredential $credential,
+        ?string $keyId = null,
+    ): string {
+        return $this->hashValue(
+            'componenta-auth-pre-auth-credential-v1',
+            $credential->toString(),
+            $keyId,
+        );
+    }
+
+    /** @return non-empty-array<string, string> */
+    public function preAuthenticationCredentialCandidates(
+        #[\SensitiveParameter]
+        PreAuthenticationCredential $credential,
+    ): array {
+        return $this->candidateValues(
+            'componenta-auth-pre-auth-credential-v1',
+            $credential->toString(),
+        );
+    }
+
+    public function hashPreAuthenticationRequestToken(
+        #[\SensitiveParameter]
+        PreAuthenticationRequestToken $token,
+        ?string $keyId = null,
+    ): string {
+        return $this->hashValue(
+            'componenta-auth-pre-auth-request-token-v1',
+            $token->toString(),
+            $keyId,
+        );
+    }
+
+    /** @return non-empty-array<string, string> */
+    public function preAuthenticationRequestTokenCandidates(
+        #[\SensitiveParameter]
+        PreAuthenticationRequestToken $token,
+    ): array {
+        return $this->candidateValues(
+            'componenta-auth-pre-auth-request-token-v1',
+            $token->toString(),
+        );
+    }
+
+    private function hashValue(
+        string $domain,
+        #[\SensitiveParameter]
+        string $value,
+        ?string $keyId,
+    ): string {
+        $id = $keyId ?? $this->currentKeyId;
+        $key = $this->keys[$id]
+            ?? throw new \InvalidArgumentException(
+                'Unknown session credential key ID.',
+            );
+
+        return hash_hmac('sha256', $domain . "\0" . $value, $key);
+    }
+
+    /** @return non-empty-array<string, string> */
+    private function candidateValues(
+        string $domain,
+        #[\SensitiveParameter]
+        string $value,
+    ): array {
         $result = [];
 
         foreach (array_keys($this->keys) as $id) {
-            $result[$id] = $this->hash($credential, $id);
+            $result[$id] = $this->hashValue($domain, $value, $id);
         }
 
+        /** @var non-empty-array<string, string> $result */
         return $result;
     }
 }

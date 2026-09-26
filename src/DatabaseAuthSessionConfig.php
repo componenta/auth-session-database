@@ -12,12 +12,14 @@ final readonly class DatabaseAuthSessionConfig
         public string $sessionTable = 'auth_sessions',
         public string $tombstoneTable = 'auth_session_credential_tombstones',
         public string $subjectLockTable = 'auth_session_subject_locks',
+        public string $preAuthenticationTable = 'auth_pre_authentication_transactions',
         public int $tombstoneTtl = 120,
     ) {
         foreach ([
             $this->sessionTable,
             $this->tombstoneTable,
             $this->subjectLockTable,
+            $this->preAuthenticationTable,
         ] as $identifier) {
             if (preg_match('/\A[A-Za-z_][A-Za-z0-9_]*\z/D', $identifier) !== 1) {
                 throw new \InvalidArgumentException(
