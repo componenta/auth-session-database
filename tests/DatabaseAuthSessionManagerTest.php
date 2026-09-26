@@ -76,6 +76,45 @@ final class DatabaseAuthSessionManagerTest extends TestCase
         self::assertNull($manager->resume($rotated->credential));
     }
 
+    public function testBulkRevocationPersistsExplicitReason(): void
+    {
+        self::requireSqlite();
+        $database = SqliteDatabaseFixture::create();
+        $manager = self::manager($database);
+        $subject = (new UuidFactory())->generate();
+
+        $manager->create(
+            $subject,
+            new AuthenticationEvidence(['session']),
+            new AuthSessionPolicy(1800, 28800),
+        );
+        $manager->create(
+            $subject,
+            new AuthenticationEvidence(['session']),
+            new AuthSessionPolicy(1800, 28800),
+        );
+
+        $manager->revokeAll(
+            $subject,
+            reason: RevocationReason::AccountDisabled,
+        );
+
+        $rows = $database->select('revocation_reason')
+            ->from('auth_sessions')
+            ->where('subject_uuid', $subject->toString())
+            ->run()
+            ->fetchAll();
+
+        self::assertCount(2, $rows);
+        foreach ($rows as $row) {
+            self::assertIsArray($row);
+            self::assertSame(
+                RevocationReason::AccountDisabled->value,
+                $row['revocation_reason'] ?? null,
+            );
+        }
+    }
+
     public function testRegistryUsesPublicUuidWithoutExposingCredential(): void
     {
         self::requireSqlite();

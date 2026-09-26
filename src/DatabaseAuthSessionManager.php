@@ -362,10 +362,12 @@ final readonly class DatabaseAuthSessionManager implements
     public function revokeAll(
         UuidInterface $subjectId,
         ?UuidInterface $exceptSessionId = null,
+        RevocationReason $reason = RevocationReason::UserRequested,
     ): void {
         $this->database->transaction(function () use (
             $subjectId,
             $exceptSessionId,
+            $reason,
         ): void {
             $this->acquireSubjectLock($subjectId);
             $query = $this->database->update($this->config->sessionTable)
@@ -380,7 +382,7 @@ final readonly class DatabaseAuthSessionManager implements
 
             $query->values([
                 'revoked_at' => $this->format($now),
-                'revocation_reason' => RevocationReason::UserRequested->value,
+                'revocation_reason' => $reason->value,
             ])->run();
         });
     }
