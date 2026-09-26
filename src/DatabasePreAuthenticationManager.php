@@ -63,12 +63,69 @@ final readonly class DatabasePreAuthenticationManager implements
     }
 
     #[\Override]
+    public function verify(
+        #[\SensitiveParameter]
+        PreAuthenticationCredential $credential,
+        #[\SensitiveParameter]
+        PreAuthenticationRequestToken $requestToken,
+    ): ?PreAuthenticationTransaction {
+        $row = $this->matchingRow($credential, $requestToken);
+
+        if ($row === null) {
+            return null;
+        }
+
+        return new PreAuthenticationTransaction(
+            Uuid::fromString(self::stringValue($row, 'uuid')),
+            $this->date(self::stringValue($row, 'created_at')),
+            $this->date(self::stringValue($row, 'expires_at')),
+        );
+    }
+
+    #[\Override]
     public function consume(
         #[\SensitiveParameter]
         PreAuthenticationCredential $credential,
         #[\SensitiveParameter]
         PreAuthenticationRequestToken $requestToken,
     ): ?PreAuthenticationTransaction {
+        $row = $this->matchingRow($credential, $requestToken);
+
+        if ($row === null) {
+            return null;
+        }
+
+        $now = $this->now();
+        $uuid = self::stringValue($row, 'uuid');
+        $credentialHash = self::stringValue($row, 'credential_hash');
+        $requestHash = self::stringValue($row, 'request_token_hash');
+        $affected = $this->database->delete(
+            $this->config->preAuthenticationTable,
+        )
+            ->where('uuid', $uuid)
+            ->where('credential_hash', $credentialHash)
+            ->where('request_token_hash', $requestHash)
+            ->where('expires_at', '>', $this->format($now))
+            ->run();
+
+        if ($affected !== 1) {
+            return null;
+        }
+
+        return new PreAuthenticationTransaction(
+            Uuid::fromString($uuid),
+            $this->date(self::stringValue($row, 'created_at')),
+            $this->date(self::stringValue($row, 'expires_at')),
+        );
+    }
+
+    /** @return array<array-key, mixed>|null */
+    private function matchingRow(
+        #[\SensitiveParameter]
+        PreAuthenticationCredential $credential,
+        #[\SensitiveParameter]
+        PreAuthenticationRequestToken $requestToken,
+    ): ?array {
         $credentialCandidates = $this->keyring
             ->preAuthenticationCredentialCandidates($credential);
         $row = $this->database->select()
@@ -126,25 +183,7 @@ final readonly class DatabasePreAuthenticationManager implements
             return null;
         }
 
-        $uuid = self::stringValue($row, 'uuid');
-        $affected = $this->database->delete(
-            $this->config->preAuthenticationTable,
-        )
-            ->where('uuid', $uuid)
-            ->where('credential_hash', $credentialHash)
-            ->where('request_token_hash', $requestHash)
-            ->where('expires_at', '>', $this->format($now))
-            ->run();
-
-        if ($affected !== 1) {
-            return null;
-        }
-
-        return new PreAuthenticationTransaction(
-            Uuid::fromString($uuid),
-            $this->date(self::stringValue($row, 'created_at')),
-            $expiresAt,
-        );
+        return $row;
     }
 
     public function cleanup(int $limit = 1000): int

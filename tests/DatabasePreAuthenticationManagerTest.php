@@ -13,7 +13,7 @@ use PHPUnit\Framework\TestCase;
 
 final class DatabasePreAuthenticationManagerTest extends TestCase
 {
-    public function testConsumesMatchingCredentialAndRequestTokenExactlyOnce(): void
+    public function testVerifyDoesNotConsumeButConsumeIsSingleWinner(): void
     {
         self::requireSqlite();
         $database = SqliteDatabaseFixture::create();
@@ -25,32 +25,26 @@ final class DatabasePreAuthenticationManagerTest extends TestCase
         );
         $grant = $manager->create();
 
-        $row = $database->select()
-            ->from('auth_pre_authentication_transactions')
-            ->where('uuid', $grant->transaction->uuid->toString())
-            ->run()
-            ->fetch();
-
-        self::assertIsArray($row);
-        self::assertNotSame(
-            $grant->credential->toString(),
-            $row['credential_hash'] ?? null,
-        );
-        self::assertNotSame(
-            $grant->requestToken->toString(),
-            $row['request_token_hash'] ?? null,
-        );
-
-        $consumed = $manager->consume(
+        self::assertNotNull($manager->verify(
             $grant->credential,
             $grant->requestToken,
+        ));
+        self::assertSame(
+            1,
+            $database->select()
+                ->from('auth_pre_authentication_transactions')
+                ->count(),
         );
 
-        self::assertNotNull($consumed);
-        self::assertTrue(
-            $consumed->uuid->equals($grant->transaction->uuid),
-        );
+        self::assertNotNull($manager->consume(
+            $grant->credential,
+            $grant->requestToken,
+        ));
         self::assertNull($manager->consume(
+            $grant->credential,
+            $grant->requestToken,
+        ));
+        self::assertNull($manager->verify(
             $grant->credential,
             $grant->requestToken,
         ));
@@ -68,9 +62,13 @@ final class DatabasePreAuthenticationManagerTest extends TestCase
         $grant = $manager->create();
         $other = $manager->create();
 
-        self::assertNull($manager->consume(
+        self::assertNull($manager->verify(
             $grant->credential,
             $other->requestToken,
+        ));
+        self::assertNotNull($manager->verify(
+            $grant->credential,
+            $grant->requestToken,
         ));
         self::assertNotNull($manager->consume(
             $grant->credential,
