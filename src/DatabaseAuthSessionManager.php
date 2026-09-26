@@ -29,8 +29,6 @@ final readonly class DatabaseAuthSessionManager implements
     AuthSessionManagerInterface,
     AuthSessionRegistryInterface
 {
-    private const int LOCK_RETRIES = 16;
-
     public function __construct(
         private DatabaseInterface $database,
         private UuidFactoryInterface $uuids,
@@ -447,32 +445,19 @@ final readonly class DatabaseAuthSessionManager implements
             OnConflict::target('subject_uuid')->doNothing(),
         )->run();
 
-        for ($attempt = 0; $attempt < self::LOCK_RETRIES; ++$attempt) {
-            $row = $this->database->select('lock_version')
-                ->from($this->config->subjectLockTable)
-                ->where('subject_uuid', $subject)
-                ->run()
-                ->fetch();
-
-            if (!is_array($row)) {
-                continue;
-            }
-
-            $version = self::intValue($row, 'lock_version');
-            $affected = $this->database->update($this->config->subjectLockTable)
-                ->where('subject_uuid', $subject)
-                ->where('lock_version', $version)
-                ->values(['lock_version' => $version + 1])
-                ->run();
-
-            if ($affected === 1) {
-                return;
-            }
-        }
-
-        throw new \RuntimeException(
-            'Could not acquire authentication-session subject lock.',
+        $affected = $this->database->execute(
+            sprintf(
+                'UPDATE %s SET lock_version = lock_version + 1 WHERE subject_uuid = ?',
+                $this->config->subjectLockTable,
+            ),
+            [$subject],
         );
+
+        if ($affected !== 1) {
+            throw new \RuntimeException(
+                'Could not acquire authentication-session subject lock.',
+            );
+        }
     }
 
     /** @return list<array<array-key, mixed>> */
@@ -587,19 +572,10 @@ final readonly class DatabaseAuthSessionManager implements
 
     private function date(string $value): DateTimeImmutable
     {
-        $date = DateTimeImmutable::createFromFormat(
-            '!' . DatabaseAuthSessionConfig::DATE_FORMAT,
+        return self::parseDatabaseDate(
             $value,
-            new DateTimeZone('UTC'),
+            'Authentication-session timestamp is invalid.',
         );
-
-        if (!$date instanceof DateTimeImmutable) {
-            throw new \UnexpectedValueException(
-                'Authentication-session timestamp is invalid.',
-            );
-        }
-
-        return $date;
     }
 
     private static function nullableDate(mixed $value): ?DateTimeImmutable
@@ -614,19 +590,34 @@ final readonly class DatabaseAuthSessionManager implements
             );
         }
 
-        $date = DateTimeImmutable::createFromFormat(
-            '!' . DatabaseAuthSessionConfig::DATE_FORMAT,
+        return self::parseDatabaseDate(
             $value,
-            new DateTimeZone('UTC'),
+            'Authentication-session nullable timestamp is invalid.',
         );
+    }
 
-        if (!$date instanceof DateTimeImmutable) {
-            throw new \UnexpectedValueException(
-                'Authentication-session nullable timestamp is invalid.',
+    private static function parseDatabaseDate(
+        string $value,
+        string $error,
+    ): DateTimeImmutable {
+        $timezone = new DateTimeZone('UTC');
+
+        foreach ([
+            '!Y-m-d H:i:s.u',
+            '!Y-m-d H:i:s',
+        ] as $format) {
+            $date = DateTimeImmutable::createFromFormat(
+                $format,
+                $value,
+                $timezone,
             );
+
+            if ($date instanceof DateTimeImmutable) {
+                return $date;
+            }
         }
 
-        return $date;
+        throw new \UnexpectedValueException($error);
     }
 
     private static function encodeEvidence(AuthenticationEvidence $evidence): string

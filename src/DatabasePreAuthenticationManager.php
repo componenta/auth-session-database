@@ -196,19 +196,26 @@ final readonly class DatabasePreAuthenticationManager implements
 
     private function date(string $value): DateTimeImmutable
     {
-        $date = DateTimeImmutable::createFromFormat(
-            '!' . DatabaseAuthSessionConfig::DATE_FORMAT,
-            $value,
-            new DateTimeZone('UTC'),
-        );
+        $timezone = new DateTimeZone('UTC');
 
-        if (!$date instanceof DateTimeImmutable) {
-            throw new \UnexpectedValueException(
-                'Pre-authentication timestamp is invalid.',
+        foreach ([
+            '!Y-m-d H:i:s.u',
+            '!Y-m-d H:i:s',
+        ] as $format) {
+            $date = DateTimeImmutable::createFromFormat(
+                $format,
+                $value,
+                $timezone,
             );
+
+            if ($date instanceof DateTimeImmutable) {
+                return $date;
+            }
         }
 
-        return $date;
+        throw new \UnexpectedValueException(
+            'Pre-authentication timestamp is invalid.',
+        );
     }
 
     /** @param array<array-key, mixed> $row */
