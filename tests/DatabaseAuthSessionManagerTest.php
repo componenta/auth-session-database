@@ -51,16 +51,18 @@ final class DatabaseAuthSessionManagerTest extends TestCase
         self::requireSqlite();
         $database = SqliteDatabaseFixture::create();
         $manager = self::manager($database);
+        $policy = new AuthSessionPolicy(1800, 28800);
         $grant = $manager->create(
             (new UuidFactory())->generate(),
             new AuthenticationEvidence(['otp.email']),
-            new AuthSessionPolicy(1800, 28800),
+            $policy,
         );
         $oldCredential = $grant->credential;
         $rotated = $manager->rotate(
             $grant->session,
             new AuthenticationEvidence(['webauthn'], ['user_verified']),
             RotationReason::Reauthentication,
+            $policy,
         );
 
         self::assertTrue($rotated->session->uuid->equals($grant->session->uuid));
