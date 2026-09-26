@@ -104,7 +104,7 @@ final class DatabaseAuthSessionManagerTest extends TestCase
             new AuthSessionPolicy(1800, 28800),
         );
 
-        $clock->advance('+2 hours');
+        $clock->advance('+10 minutes');
 
         $rotated = $manager->rotate(
             $grant->session,
@@ -116,15 +116,15 @@ final class DatabaseAuthSessionManagerTest extends TestCase
         );
 
         self::assertSame(
-            '2030-01-01T02:30:00+00:00',
+            '2030-01-01T00:40:00+00:00',
             $rotated->session->idleExpiresAt->format(DATE_ATOM),
         );
         self::assertSame(
-            '2030-01-01T10:00:00+00:00',
+            '2030-01-01T08:10:00+00:00',
             $rotated->session->absoluteExpiresAt->format(DATE_ATOM),
         );
 
-        $clock->advance('+1 hour');
+        $clock->advance('+10 minutes');
 
         $rotatedAgain = $manager->rotate(
             $rotated->session,
@@ -133,7 +133,7 @@ final class DatabaseAuthSessionManagerTest extends TestCase
         );
 
         self::assertSame(
-            '2030-01-01T11:00:00+00:00',
+            '2030-01-01T08:20:00+00:00',
             $rotatedAgain->session->absoluteExpiresAt->format(DATE_ATOM),
         );
     }
