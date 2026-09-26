@@ -243,11 +243,13 @@ final readonly class DatabaseAuthSessionManager implements
             $absoluteExpiresAt = $this->date(
                 self::stringValue($row, 'absolute_expires_at'),
             );
-            $idleWindow = $policy?->idleTimeout ?? max(
-                1,
-                $this->date(self::stringValue($row, 'idle_expires_at'))->getTimestamp()
-                    - $this->date(self::stringValue($row, 'last_active_at'))->getTimestamp(),
-            );
+            $idleWindow = $policy !== null
+                ? $policy->idleTimeout
+                : max(
+                    1,
+                    $this->date(self::stringValue($row, 'idle_expires_at'))->getTimestamp()
+                        - $this->date(self::stringValue($row, 'last_active_at'))->getTimestamp(),
+                );
 
             if ($policy !== null) {
                 $policyAbsolute = $now->modify(
@@ -659,12 +661,17 @@ final readonly class DatabaseAuthSessionManager implements
             'is_string',
         ));
 
-        if (count($methods) !== count($data['methods'])) {
+        if (
+            $methods === []
+            || count($methods) !== count($data['methods'])
+            || count($capabilities) !== count($data['capabilities'])
+        ) {
             throw new \UnexpectedValueException(
-                'Persisted authentication evidence methods are invalid.',
+                'Persisted authentication evidence is invalid.',
             );
         }
 
+        /** @var non-empty-list<string> $methods */
         return new AuthenticationEvidence($methods, $capabilities);
     }
 
