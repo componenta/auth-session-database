@@ -65,6 +65,14 @@ final class DatabaseAuthSessionManagerTest extends TestCase
 
         self::assertTrue($rotated->session->uuid->equals($grant->session->uuid));
         self::assertSame(2, $rotated->session->credentialGeneration);
+        self::assertSame(
+            ['otp.email', 'webauthn'],
+            $rotated->session->evidence->methods,
+        );
+        self::assertSame(
+            ['webauthn'],
+            $rotated->session->reauthenticationEvidence?->methods,
+        );
         self::assertNull($manager->resume($oldCredential));
         self::assertNotNull($manager->resume($rotated->credential));
 

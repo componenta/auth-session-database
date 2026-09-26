@@ -103,6 +103,7 @@ final readonly class DatabaseAuthSessionManager implements
                 'idle_expires_at' => $this->format($idleExpiresAt),
                 'absolute_expires_at' => $this->format($absoluteExpiresAt),
                 'evidence' => self::encodeEvidence($evidence),
+                'reauthentication_evidence' => null,
                 'metadata' => self::encodeMetadata($metadata),
                 'revoked_at' => null,
                 'revocation_reason' => null,
@@ -265,9 +266,26 @@ final readonly class DatabaseAuthSessionManager implements
                 $idleExpiresAt = $absoluteExpiresAt;
             }
 
-            $reauthenticatedAt = $reason === RotationReason::Reauthentication
-                ? $now
-                : self::nullableDate($row['reauthenticated_at'] ?? null);
+            $currentEvidence = self::decodeEvidence(
+                self::stringValue($row, 'evidence'),
+            );
+
+            if ($reason === RotationReason::Reauthentication) {
+                $reauthenticatedAt = $now;
+                $reauthenticationEvidence = $evidence;
+                $effectiveEvidence = self::mergeEvidence(
+                    $currentEvidence,
+                    $evidence,
+                );
+            } else {
+                $reauthenticatedAt = self::nullableDate(
+                    $row['reauthenticated_at'] ?? null,
+                );
+                $reauthenticationEvidence = self::decodeNullableEvidence(
+                    $row['reauthentication_evidence'] ?? null,
+                );
+                $effectiveEvidence = $evidence;
+            }
 
             $affected = $this->database->update($this->config->sessionTable)
                 ->where('uuid', $observed->uuid->toString())
@@ -278,7 +296,13 @@ final readonly class DatabaseAuthSessionManager implements
                     'credential_hash' => $newHash,
                     'credential_key_id' => $keyId,
                     'credential_generation' => $generation + 1,
-                    'evidence' => self::encodeEvidence($evidence),
+                    'evidence' => self::encodeEvidence($effectiveEvidence),
+                    'reauthentication_evidence' =>
+                        $reauthenticationEvidence === null
+                            ? null
+                            : self::encodeEvidence(
+                                $reauthenticationEvidence,
+                            ),
                     'reauthenticated_at' => $reauthenticatedAt === null
                         ? null
                         : $this->format($reauthenticatedAt),
@@ -298,7 +322,7 @@ final readonly class DatabaseAuthSessionManager implements
                 new AuthSession(
                     $observed->uuid,
                     $observed->subjectId,
-                    $evidence,
+                    $effectiveEvidence,
                     $generation + 1,
                     $this->date(self::stringValue($row, 'created_at')),
                     $this->date(self::stringValue($row, 'authenticated_at')),
@@ -307,6 +331,7 @@ final readonly class DatabaseAuthSessionManager implements
                     $idleExpiresAt,
                     $absoluteExpiresAt,
                     self::decodeMetadata(self::stringValue($row, 'metadata')),
+                    reauthenticationEvidence: $reauthenticationEvidence,
                 ),
                 $credential,
             );
@@ -558,6 +583,9 @@ final readonly class DatabaseAuthSessionManager implements
             $this->date(self::stringValue($row, 'idle_expires_at')),
             $this->date(self::stringValue($row, 'absolute_expires_at')),
             self::decodeMetadata(self::stringValue($row, 'metadata')),
+            reauthenticationEvidence: self::decodeNullableEvidence(
+                $row['reauthentication_evidence'] ?? null,
+            ),
         );
     }
 
@@ -666,6 +694,38 @@ final readonly class DatabaseAuthSessionManager implements
 
         /** @var non-empty-list<string> $methods */
         return new AuthenticationEvidence($methods, $capabilities);
+    }
+
+    private static function decodeNullableEvidence(
+        mixed $value,
+    ): ?AuthenticationEvidence {
+        if ($value === null) {
+            return null;
+        }
+
+        if (!is_string($value)) {
+            throw new \UnexpectedValueException(
+                'Persisted reauthentication evidence is invalid.',
+            );
+        }
+
+        return self::decodeEvidence($value);
+    }
+
+    private static function mergeEvidence(
+        AuthenticationEvidence $current,
+        AuthenticationEvidence $proof,
+    ): AuthenticationEvidence {
+        return new AuthenticationEvidence(
+            methods: array_values(array_unique([
+                ...$current->methods,
+                ...$proof->methods,
+            ])),
+            capabilities: array_values(array_unique([
+                ...$current->capabilities,
+                ...$proof->capabilities,
+            ])),
+        );
     }
 
     /** @param array<string, mixed> $metadata */

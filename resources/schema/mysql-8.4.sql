@@ -16,6 +16,7 @@ CREATE TABLE auth_sessions (
     idle_expires_at DATETIME(6) NOT NULL,
     absolute_expires_at DATETIME(6) NOT NULL,
     evidence TEXT NOT NULL,
+    reauthentication_evidence TEXT NULL,
     metadata TEXT NOT NULL,
     revoked_at DATETIME(6) NULL,
     revocation_reason VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NULL,
