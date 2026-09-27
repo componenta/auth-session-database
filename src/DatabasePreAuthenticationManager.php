@@ -128,7 +128,10 @@ final readonly class DatabasePreAuthenticationManager implements
     ): ?array {
         $credentialCandidates = $this->keyring
             ->preAuthenticationCredentialCandidates($credential);
-        $row = $this->database->select()
+        $row = $this->database->select()->withDriver(
+            $this->database->getDriver(DatabaseInterface::WRITE),
+            $this->database->getPrefix(),
+        )
             ->from($this->config->preAuthenticationTable)
             ->where(
                 'credential_hash',
@@ -194,7 +197,10 @@ final readonly class DatabasePreAuthenticationManager implements
             );
         }
 
-        $rows = $this->database->select('uuid')
+        $rows = $this->database->select('uuid')->withDriver(
+            $this->database->getDriver(DatabaseInterface::WRITE),
+            $this->database->getPrefix(),
+        )
             ->from($this->config->preAuthenticationTable)
             ->where('expires_at', '<=', $this->format($this->now()))
             ->limit($limit)
