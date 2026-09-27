@@ -9,7 +9,6 @@ CREATE TABLE auth_sessions (
     credential_hash TEXT NOT NULL UNIQUE,
     credential_key_id TEXT NOT NULL,
     credential_generation INTEGER NOT NULL,
-    created_at TEXT NOT NULL,
     authenticated_at TEXT NOT NULL,
     reauthenticated_at TEXT NULL,
     last_active_at TEXT NOT NULL,

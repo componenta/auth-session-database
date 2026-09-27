@@ -9,7 +9,6 @@ CREATE TABLE auth_sessions (
     credential_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL UNIQUE,
     credential_key_id VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
     credential_generation INT UNSIGNED NOT NULL,
-    created_at DATETIME(6) NOT NULL,
     authenticated_at DATETIME(6) NOT NULL,
     reauthenticated_at DATETIME(6) NULL,
     last_active_at DATETIME(6) NOT NULL,

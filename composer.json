@@ -5,13 +5,14 @@
     "license": "MIT",
     "require": {
         "php": "^8.4",
-        "componenta/auth-session": "dev-main",
-        "componenta/clock": "^1.1.0",
-        "componenta/identity": "^1.0",
+        "componenta/auth": "^3.0",
+        "componenta/auth-session": "^1.0",
+        "componenta/identity": "^1.0.1",
         "cycle/database": "^2.22",
         "psr/clock": "^1.0"
     },
     "require-dev": {
+        "componenta/clock": "^1.1.0",
         "phpstan/phpstan": "^2.1",
         "phpunit/phpunit": "^12.0"
     },
@@ -26,16 +27,31 @@
         }
     },
     "repositories": [
-        {"type": "vcs", "url": "https://github.com/componenta/auth.git"},
-        {"type": "vcs", "url": "https://github.com/componenta/auth-session.git"}
+        {
+            "type": "vcs",
+            "url": "https://github.com/componenta/auth.git"
+        },
+        {
+            "type": "vcs",
+            "url": "https://github.com/componenta/auth-session.git"
+        }
     ],
-    "minimum-stability": "dev",
+    "minimum-stability": "stable",
     "prefer-stable": true,
-    "extra": {"branch-alias": {"dev-main": "1.0.x-dev"}},
-    "config": {"sort-packages": true},
+    "extra": {
+        "branch-alias": {
+            "dev-main": "1.0.x-dev"
+        }
+    },
+    "config": {
+        "sort-packages": true
+    },
     "scripts": {
         "test": "@php vendor/bin/phpunit --configuration phpunit.xml.dist",
         "phpstan": "@php vendor/bin/phpstan analyse src --level=max",
-        "check": ["@phpstan", "@test"]
+        "check": [
+            "@phpstan",
+            "@test"
+        ]
     }
 }

@@ -35,6 +35,7 @@ final class DatabaseAuthSessionManagerTest extends TestCase
             ->fetch();
 
         self::assertIsArray($row);
+        self::assertArrayNotHasKey('created_at', $row);
         self::assertNotSame(
             $grant->credential->toString(),
             $row['credential_hash'] ?? null,
@@ -141,6 +142,29 @@ final class DatabaseAuthSessionManagerTest extends TestCase
             '2030-01-01T08:20:00+00:00',
             $rotatedAgain->session->absoluteExpiresAt->format(DATE_ATOM),
         );
+
+        $resumed = $manager->resume($rotatedAgain->credential);
+        $registered = $manager->find($grant->session->uuid);
+        $listed = $manager->all($grant->session->subjectId);
+
+        self::assertNotNull($resumed);
+        self::assertNotNull($registered);
+        self::assertCount(1, $listed);
+
+        foreach ([$grant->session, $rotated->session, $rotatedAgain->session, $resumed, $registered, $listed[0]] as $session) {
+            self::assertSame(
+                '2030-01-01T00:00:00+00:00',
+                $session->authenticatedAt->format(DATE_ATOM),
+            );
+        }
+
+        foreach ([$rotatedAgain->session, $resumed, $registered, $listed[0]] as $session) {
+            self::assertSame(
+                '2030-01-01T00:20:00+00:00',
+                $session->reauthenticatedAt?->format(DATE_ATOM),
+            );
+            self::assertSame(['totp'], $session->reauthenticationEvidence?->methods);
+        }
     }
 
     public function testBulkRevocationPersistsExplicitReason(): void

@@ -98,7 +98,6 @@ final readonly class DatabaseAuthSessionManager implements
                 'credential_hash' => $credentialHash,
                 'credential_key_id' => $keyId,
                 'credential_generation' => 1,
-                'created_at' => $this->format($now),
                 'authenticated_at' => $this->format($now),
                 'reauthenticated_at' => null,
                 'last_active_at' => $this->format($now),
@@ -117,7 +116,6 @@ final readonly class DatabaseAuthSessionManager implements
                     $subjectId,
                     $evidence,
                     1,
-                    $now,
                     $now,
                     null,
                     $now,
@@ -295,10 +293,7 @@ final readonly class DatabaseAuthSessionManager implements
             if ($reason === RotationReason::Reauthentication) {
                 $reauthenticatedAt = $now;
                 $reauthenticationEvidence = $evidence;
-                $effectiveEvidence = self::mergeEvidence(
-                    $currentEvidence,
-                    $evidence,
-                );
+                $effectiveEvidence = $currentEvidence->merge($evidence);
             } else {
                 $reauthenticatedAt = self::nullableDate(
                     $row['reauthenticated_at'] ?? null,
@@ -346,7 +341,6 @@ final readonly class DatabaseAuthSessionManager implements
                     $observed->subjectId,
                     $effectiveEvidence,
                     $generation + 1,
-                    $this->date(self::stringValue($row, 'created_at')),
                     $this->date(self::stringValue($row, 'authenticated_at')),
                     $reauthenticatedAt,
                     $now,
@@ -523,7 +517,7 @@ final readonly class DatabaseAuthSessionManager implements
             ->where('revoked_at', null)
             ->where('idle_expires_at', '>', $this->format($now))
             ->where('absolute_expires_at', '>', $this->format($now))
-            ->orderBy('created_at', 'ASC')
+            ->orderBy('authenticated_at', 'ASC')
             ->run()
             ->fetchAll();
 
@@ -607,7 +601,6 @@ final readonly class DatabaseAuthSessionManager implements
             Uuid::fromString(self::stringValue($row, 'subject_uuid')),
             self::decodeEvidence(self::stringValue($row, 'evidence')),
             self::intValue($row, 'credential_generation'),
-            $this->date(self::stringValue($row, 'created_at')),
             $this->date(self::stringValue($row, 'authenticated_at')),
             self::nullableDate($row['reauthenticated_at'] ?? null),
             $this->date(self::stringValue($row, 'last_active_at')),
@@ -741,22 +734,6 @@ final readonly class DatabaseAuthSessionManager implements
         }
 
         return self::decodeEvidence($value);
-    }
-
-    private static function mergeEvidence(
-        AuthenticationEvidence $current,
-        AuthenticationEvidence $proof,
-    ): AuthenticationEvidence {
-        return new AuthenticationEvidence(
-            methods: array_values(array_unique([
-                ...$current->methods,
-                ...$proof->methods,
-            ])),
-            capabilities: array_values(array_unique([
-                ...$current->capabilities,
-                ...$proof->capabilities,
-            ])),
-        );
     }
 
     /** @param array<string, mixed> $metadata */

@@ -9,7 +9,6 @@ CREATE TABLE auth_sessions (
     credential_hash CHAR(64) NOT NULL UNIQUE,
     credential_key_id VARCHAR(64) NOT NULL,
     credential_generation INTEGER NOT NULL CHECK (credential_generation > 0),
-    created_at TIMESTAMP(6) WITHOUT TIME ZONE NOT NULL,
     authenticated_at TIMESTAMP(6) WITHOUT TIME ZONE NOT NULL,
     reauthenticated_at TIMESTAMP(6) WITHOUT TIME ZONE NULL,
     last_active_at TIMESTAMP(6) WITHOUT TIME ZONE NOT NULL,
