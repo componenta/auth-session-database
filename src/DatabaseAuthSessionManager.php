@@ -20,11 +20,13 @@ use Componenta\Identity\Uuid;
 use Componenta\Identity\UuidFactoryInterface;
 use Componenta\Identity\UuidInterface;
 use Cycle\Database\DatabaseInterface;
+use Cycle\Database\Injection\Fragment;
 use Cycle\Database\Query\OnConflict;
 use DateTimeImmutable;
 use DateTimeZone;
 use Psr\Clock\ClockInterface;
 
+/** Security-state reads must use the writer: replicas may still accept revoked credentials. */
 final readonly class DatabaseAuthSessionManager implements
     AuthSessionManagerInterface,
     AuthSessionRegistryInterface
@@ -385,7 +387,10 @@ final readonly class DatabaseAuthSessionManager implements
         }
 
         $hashes = array_values($this->keyring->candidates($credential));
-        $row = $this->database->select(['session_uuid', 'expires_at'])
+        $row = $this->database->select(['session_uuid', 'expires_at'])->withDriver(
+            $this->database->getDriver(DatabaseInterface::WRITE),
+            $this->database->getPrefix(),
+        )
             ->from($this->config->tombstoneTable)
             ->where('credential_hash', 'IN', $hashes)
             ->run()
@@ -492,13 +497,10 @@ final readonly class DatabaseAuthSessionManager implements
             OnConflict::target('subject_uuid')->doNothing(),
         )->run();
 
-        $affected = $this->database->execute(
-            sprintf(
-                'UPDATE %s SET lock_version = lock_version + 1 WHERE subject_uuid = ?',
-                $this->config->subjectLockTable,
-            ),
-            [$subject],
-        );
+        $affected = $this->database->update($this->config->subjectLockTable)
+            ->where('subject_uuid', $subject)
+            ->values(['lock_version' => new Fragment('lock_version + 1')])
+            ->run();
 
         if ($affected !== 1) {
             throw new \RuntimeException(
@@ -512,7 +514,10 @@ final readonly class DatabaseAuthSessionManager implements
         UuidInterface $subjectId,
         DateTimeImmutable $now,
     ): array {
-        $rows = $this->database->select()
+        $rows = $this->database->select()->withDriver(
+            $this->database->getDriver(DatabaseInterface::WRITE),
+            $this->database->getPrefix(),
+        )
             ->from($this->config->sessionTable)
             ->where('subject_uuid', $subjectId->toString())
             ->where('revoked_at', null)
@@ -528,7 +533,10 @@ final readonly class DatabaseAuthSessionManager implements
     /** @return array<array-key, mixed>|null */
     private function rowByUuid(UuidInterface $uuid): ?array
     {
-        $row = $this->database->select()
+        $row = $this->database->select()->withDriver(
+            $this->database->getDriver(DatabaseInterface::WRITE),
+            $this->database->getPrefix(),
+        )
             ->from($this->config->sessionTable)
             ->where('uuid', $uuid->toString())
             ->run()
@@ -543,7 +551,10 @@ final readonly class DatabaseAuthSessionManager implements
         SessionCredential $credential,
     ): ?array {
         $candidates = $this->keyring->candidates($credential);
-        $row = $this->database->select()
+        $row = $this->database->select()->withDriver(
+            $this->database->getDriver(DatabaseInterface::WRITE),
+            $this->database->getPrefix(),
+        )
             ->from($this->config->sessionTable)
             ->where('credential_hash', 'IN', array_values($candidates))
             ->where('revoked_at', null)
