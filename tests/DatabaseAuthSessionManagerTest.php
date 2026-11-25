@@ -17,6 +17,40 @@ use PHPUnit\Framework\TestCase;
 
 final class DatabaseAuthSessionManagerTest extends TestCase
 {
+    public function testActivityDoesNotMoveBackwardsWhenTheClockRegresses(): void
+    {
+        self::requireSqlite();
+        $database = SqliteDatabaseFixture::create();
+        $clock = new FrozenClock('2030-01-01T00:00:00+00:00', 'UTC');
+        $manager = new DatabaseAuthSessionManager(
+            $database,
+            new UuidFactory(),
+            $clock,
+            new CredentialKeyring('k1', ['k1' => str_repeat('k', 32)]),
+        );
+        $grant = $manager->create(
+            (new UuidFactory())->generate(),
+            new AuthenticationEvidence(['password']),
+            new AuthSessionPolicy(1800, 28800),
+        );
+
+        $clock->advance('-1 second');
+        $manager->touch($grant->session);
+        $unchanged = $manager->resume($grant->credential);
+
+        self::assertNotNull($unchanged);
+        self::assertEquals($grant->session->lastActiveAt, $unchanged->lastActiveAt);
+        self::assertEquals($grant->session->idleExpiresAt, $unchanged->idleExpiresAt);
+
+        $clock->advance('+2 seconds');
+        $manager->touch($unchanged);
+        $advanced = $manager->resume($grant->credential);
+
+        self::assertNotNull($advanced);
+        self::assertEquals($clock->now(), $advanced->lastActiveAt);
+        self::assertEquals($clock->now()->modify('+1800 seconds'), $advanced->idleExpiresAt);
+    }
+
     public function testRawCredentialIsNeverPersistedAndCanResume(): void
     {
         self::requireSqlite();

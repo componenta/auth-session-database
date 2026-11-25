@@ -160,7 +160,8 @@ final readonly class DatabaseAuthSessionManager implements
         $now = $this->now();
 
         if (
-            $observed->idleExpiresAt <= $now
+            $now <= $observed->lastActiveAt
+            || $observed->idleExpiresAt <= $now
             || $observed->absoluteExpiresAt <= $now
         ) {
             return;
