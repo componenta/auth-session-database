@@ -18,6 +18,31 @@ use Psr\Clock\ClockInterface;
 
 final class DatabaseAuthSessionManagerTest extends TestCase
 {
+    public function testNumericMetadataNamesSurvivePersistenceAndRotation(): void
+    {
+        self::requireSqlite();
+        $manager = self::manager(SqliteDatabaseFixture::create());
+        $subject = (new UuidFactory())->generate();
+        $evidence = new AuthenticationEvidence(['password']);
+        $metadata = ['0' => 'zero', '42' => 'numeric', '001' => 'leading zero', 'device' => 'Browser'];
+        $grant = $manager->create(
+            $subject,
+            $evidence,
+            new AuthSessionPolicy(1800, 28800),
+            $metadata,
+        );
+
+        self::assertSame($metadata, $grant->session->metadata);
+        self::assertSame($metadata, $manager->resume($grant->credential)?->metadata);
+        self::assertSame($metadata, $manager->find($grant->session->uuid)?->metadata);
+        self::assertSame($metadata, $manager->all($subject)[0]->metadata);
+
+        $rotated = $manager->rotate($grant->session, $evidence, RotationReason::SecurityEvent);
+
+        self::assertSame($metadata, $rotated->session->metadata);
+        self::assertSame($metadata, $manager->resume($rotated->credential)?->metadata);
+    }
+
     public function testExpiredReadDoesNotRevokeAConcurrentlyRenewedSession(): void
     {
         self::requireSqlite();

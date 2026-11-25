@@ -747,13 +747,13 @@ final readonly class DatabaseAuthSessionManager implements
         return self::decodeEvidence($value);
     }
 
-    /** @param array<string, mixed> $metadata */
+    /** @param array<array-key, mixed> $metadata */
     private static function encodeMetadata(array $metadata): string
     {
         return json_encode($metadata, JSON_THROW_ON_ERROR);
     }
 
-    /** @return array<string, scalar|null> */
+    /** @return array<array-key, scalar|null> */
     private static function decodeMetadata(string $json): array
     {
         $metadata = json_decode($json, true, 32, JSON_THROW_ON_ERROR);
@@ -767,7 +767,7 @@ final readonly class DatabaseAuthSessionManager implements
         $result = [];
 
         foreach ($metadata as $key => $value) {
-            if (!is_string($key) || (!is_scalar($value) && $value !== null)) {
+            if (!is_scalar($value) && $value !== null) {
                 throw new \UnexpectedValueException(
                     'Persisted authentication-session metadata is invalid.',
                 );
