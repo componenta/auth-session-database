@@ -14,9 +14,47 @@ use Componenta\Auth\Session\RotationReason;
 use Componenta\Clock\FrozenClock;
 use Componenta\Identity\UuidFactory;
 use PHPUnit\Framework\TestCase;
+use Psr\Clock\ClockInterface;
 
 final class DatabaseAuthSessionManagerTest extends TestCase
 {
+    public function testExpiredReadDoesNotRevokeAConcurrentlyRenewedSession(): void
+    {
+        self::requireSqlite();
+        $database = SqliteDatabaseFixture::create();
+        $clock = new FrozenClock('2030-01-01T00:00:00+00:00', 'UTC');
+        $keyring = new CredentialKeyring('k1', ['k1' => str_repeat('k', 32)]);
+        $writer = new DatabaseAuthSessionManager($database, new UuidFactory(), $clock, $keyring);
+        $grant = $writer->create(
+            (new UuidFactory())->generate(),
+            new AuthenticationEvidence(['password']),
+            new AuthSessionPolicy(1800, 28800),
+        );
+
+        // Resume reads the original row first. Another request then renews it
+        // before the reader evaluates that old snapshot at its expiry boundary.
+        $readerClock = $this->createStub(ClockInterface::class);
+        $readerClock->method('now')->willReturnCallback(
+            static function () use ($writer, $grant, $clock): \DateTimeImmutable {
+                $clock->advance('+1700 seconds');
+                $writer->touch($grant->session);
+                $clock->advance('+200 seconds');
+
+                return $clock->now();
+            },
+        );
+        $reader = new DatabaseAuthSessionManager($database, new UuidFactory(), $readerClock, $keyring);
+
+        self::assertNull($reader->resume($grant->credential));
+        $renewed = $writer->resume($grant->credential);
+        self::assertNotNull($renewed);
+        self::assertSame('2030-01-01T00:58:20+00:00', $renewed->idleExpiresAt->format(DATE_ATOM));
+
+        $clock->advance('+1600 seconds');
+        self::assertNull($writer->resume($grant->credential));
+        self::assertFalse($writer->isGrantCurrent($grant));
+    }
+
     public function testActivityDoesNotMoveBackwardsWhenTheClockRegresses(): void
     {
         self::requireSqlite();

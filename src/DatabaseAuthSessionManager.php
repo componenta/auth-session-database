@@ -22,6 +22,7 @@ use Componenta\Identity\UuidInterface;
 use Cycle\Database\DatabaseInterface;
 use Cycle\Database\Injection\Fragment;
 use Cycle\Database\Query\OnConflict;
+use Cycle\Database\Query\UpdateQuery;
 use DateTimeImmutable;
 use DateTimeZone;
 use Psr\Clock\ClockInterface;
@@ -142,11 +143,20 @@ final readonly class DatabaseAuthSessionManager implements
         $now = $this->now();
 
         if (!$this->isActiveRow($row, $now)) {
-            $this->revokeUuid(
-                self::stringValue($row, 'uuid'),
-                RevocationReason::Expired,
-                $now,
-            );
+            $formattedNow = $this->format($now);
+            $this->database->update($this->config->sessionTable)
+                ->where('uuid', self::stringValue($row, 'uuid'))
+                ->where('revoked_at', null)
+                // A touch or rotation may have renewed the selected snapshot.
+                ->where(static function (UpdateQuery $query) use ($formattedNow): void {
+                    $query->where('idle_expires_at', '<=', $formattedNow)
+                        ->orWhere('absolute_expires_at', '<=', $formattedNow);
+                })
+                ->values([
+                    'revoked_at' => $formattedNow,
+                    'revocation_reason' => RevocationReason::Expired->value,
+                ])
+                ->run();
 
             return null;
         }
