@@ -13,11 +13,13 @@ final readonly class CredentialKeyring
     private const int MIN_KEY_BYTES = 32;
     private const int MAX_KEY_BYTES = 4096;
 
-    /** @var non-empty-array<string, string> */
+    /** @var non-empty-array<array-key, string> */
     private array $keys;
 
     /**
-     * @param non-empty-array<string, string> $keys
+     * Numeric string IDs use PHP's integer array keys.
+     *
+     * @param non-empty-array<array-key, string> $keys
      */
     public function __construct(
         public string $currentKeyId,
@@ -34,7 +36,7 @@ final readonly class CredentialKeyring
 
         foreach ($keys as $id => $key) {
             if (
-                preg_match('/\A[a-zA-Z0-9._-]{1,64}\z/D', $id) !== 1
+                preg_match('/\A[a-zA-Z0-9._-]{1,64}\z/D', (string) $id) !== 1
                 || strlen($key) < self::MIN_KEY_BYTES
                 || strlen($key) > self::MAX_KEY_BYTES
             ) {
@@ -68,7 +70,7 @@ final readonly class CredentialKeyring
         );
     }
 
-    /** @return non-empty-array<string, string> */
+    /** @return non-empty-array<array-key, string> */
     public function candidates(
         #[\SensitiveParameter]
         SessionCredential $credential,
@@ -91,7 +93,7 @@ final readonly class CredentialKeyring
         );
     }
 
-    /** @return non-empty-array<string, string> */
+    /** @return non-empty-array<array-key, string> */
     public function preAuthenticationCredentialCandidates(
         #[\SensitiveParameter]
         PreAuthenticationCredential $credential,
@@ -114,7 +116,7 @@ final readonly class CredentialKeyring
         );
     }
 
-    /** @return non-empty-array<string, string> */
+    /** @return non-empty-array<array-key, string> */
     public function preAuthenticationRequestTokenCandidates(
         #[\SensitiveParameter]
         PreAuthenticationRequestToken $token,
@@ -140,7 +142,7 @@ final readonly class CredentialKeyring
         return hash_hmac('sha256', $domain . "\0" . $value, $key);
     }
 
-    /** @return non-empty-array<string, string> */
+    /** @return non-empty-array<array-key, string> */
     private function candidateValues(
         string $domain,
         #[\SensitiveParameter]
@@ -149,10 +151,10 @@ final readonly class CredentialKeyring
         $result = [];
 
         foreach (array_keys($this->keys) as $id) {
-            $result[$id] = $this->hashValue($domain, $value, $id);
+            $result[$id] = $this->hashValue($domain, $value, (string) $id);
         }
 
-        /** @var non-empty-array<string, string> $result */
+        /** @var non-empty-array<array-key, string> $result */
         return $result;
     }
 }

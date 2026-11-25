@@ -12,6 +12,33 @@ use PHPUnit\Framework\TestCase;
 
 final class CredentialKeyringTest extends TestCase
 {
+    public function testNumericKeyIdentifiersSupportLookupAndCandidateGeneration(): void
+    {
+        $keyring = new CredentialKeyring('2', [
+            '1' => str_repeat('a', 32),
+            '2' => str_repeat('b', 32),
+        ]);
+        $session = SessionCredential::fromBytes(str_repeat('s', 32));
+        $credential = PreAuthenticationCredential::fromBytes(str_repeat('c', 32));
+        $requestToken = PreAuthenticationRequestToken::fromBytes(str_repeat('t', 32));
+
+        self::assertSame('2', $keyring->currentKeyId);
+        self::assertSame($keyring->hash($session, '2'), $keyring->hash($session));
+        self::assertSame([
+            '1' => $keyring->hash($session, '1'),
+            '2' => $keyring->hash($session, '2'),
+        ], $keyring->candidates($session));
+        self::assertSame([
+            '1' => $keyring->hashPreAuthenticationCredential($credential, '1'),
+            '2' => $keyring->hashPreAuthenticationCredential($credential, '2'),
+        ], $keyring->preAuthenticationCredentialCandidates($credential));
+        self::assertSame([
+            '1' => $keyring->hashPreAuthenticationRequestToken($requestToken, '1'),
+            '2' => $keyring->hashPreAuthenticationRequestToken($requestToken, '2'),
+        ], $keyring->preAuthenticationRequestTokenCandidates($requestToken));
+        self::assertNotSame($keyring->hash($session, '1'), $keyring->hash($session, '2'));
+    }
+
     public function testKeyMaterialIsAnOwnedSnapshotAcrossCredentialDomains(): void
     {
         $key = str_repeat('a', 32);
