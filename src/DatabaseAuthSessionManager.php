@@ -232,6 +232,16 @@ final readonly class DatabaseAuthSessionManager implements
             }
 
             $now = $this->now();
+            $lastActiveAt = $this->date(
+                self::stringValue($row, 'last_active_at'),
+            );
+
+            if ($now < $lastActiveAt) {
+                // Preserve the persisted timeline across clock skew. Freshness
+                // checks reject a proof in the future until wall time catches up.
+                $now = $lastActiveAt;
+            }
+
             $oldHash = self::stringValue($row, 'credential_hash');
             $oldKeyId = self::stringValue($row, 'credential_key_id');
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Componenta\Auth\Session\Database\Tests;
 
 use Componenta\Auth\AuthenticationEvidence;
+use Componenta\Auth\Session\AssuranceRequirement;
 use Componenta\Auth\Session\AuthSessionPolicy;
 use Componenta\Auth\Session\Database\CredentialKeyring;
 use Componenta\Auth\Session\Database\DatabaseAuthSessionManager;
@@ -13,11 +14,81 @@ use Componenta\Auth\Session\RevocationReason;
 use Componenta\Auth\Session\RotationReason;
 use Componenta\Clock\FrozenClock;
 use Componenta\Identity\UuidFactory;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Clock\ClockInterface;
 
 final class DatabaseAuthSessionManagerTest extends TestCase
 {
+    /** @return iterable<string, array{RotationReason, int}> */
+    public static function rotationReasons(): iterable
+    {
+        foreach (RotationReason::cases() as $reason) {
+            yield $reason->value . ' at the same time' => [$reason, 0];
+            yield $reason->value . ' after a small clock regression' => [$reason, -1];
+            yield $reason->value . ' before initial authentication' => [$reason, -601];
+        }
+    }
+
+    #[DataProvider('rotationReasons')]
+    public function testRotationPreservesActivityWhenTheClockRegresses(
+        RotationReason $reason,
+        int $clockOffset,
+    ): void {
+        self::requireSqlite();
+        $clock = new FrozenClock('2030-01-01T00:00:00+00:00', 'UTC');
+        $manager = new DatabaseAuthSessionManager(
+            SqliteDatabaseFixture::create(),
+            new UuidFactory(),
+            $clock,
+            new CredentialKeyring('k1', ['k1' => str_repeat('k', 32)]),
+        );
+        $evidence = new AuthenticationEvidence(['password']);
+        $policy = new AuthSessionPolicy(1800, 28800);
+        $grant = $manager->create((new UuidFactory())->generate(), $evidence, $policy);
+        $clock->advance('+10 minutes');
+        $manager->touch($grant->session);
+        $active = $manager->resume($grant->credential);
+        self::assertNotNull($active);
+
+        $clock->advance(sprintf('%+d seconds', $clockOffset));
+
+        // The caller may still hold the snapshot from before the latest touch.
+        $rotated = $manager->rotate($grant->session, $evidence, $reason, $policy);
+        $resumed = $manager->resume($rotated->credential);
+
+        self::assertNotNull($resumed);
+        self::assertEquals($active->lastActiveAt, $resumed->lastActiveAt);
+        self::assertEquals($active->idleExpiresAt, $resumed->idleExpiresAt);
+        self::assertSame(2, $resumed->credentialGeneration);
+        self::assertTrue($manager->isGrantCurrent($rotated));
+        self::assertNull($manager->resume($grant->credential));
+
+        if ($reason === RotationReason::Reauthentication) {
+            self::assertEquals($active->lastActiveAt, $resumed->reauthenticatedAt);
+            self::assertEquals(
+                $active->lastActiveAt->modify('+28800 seconds'),
+                $resumed->absoluteExpiresAt,
+            );
+            self::assertSame(
+                $clockOffset === 0,
+                (new AssuranceRequirement(['password'], maxAge: 0))
+                    ->isSatisfiedBy($resumed, $clock->now()),
+                'A future-dated proof must wait for the wall clock to catch up.',
+            );
+        } else {
+            self::assertEquals($grant->session->absoluteExpiresAt, $resumed->absoluteExpiresAt);
+        }
+
+        $clock->advance(sprintf('+%d seconds', 1 - $clockOffset));
+        $next = $manager->rotate($resumed, $evidence, $reason, $policy);
+
+        self::assertSame(3, $next->session->credentialGeneration);
+        self::assertEquals($clock->now(), $next->session->lastActiveAt);
+        self::assertNull($manager->resume($rotated->credential));
+        self::assertNotNull($manager->resume($next->credential));
+    }
+
     public function testNumericMetadataNamesSurvivePersistenceAndRotation(): void
     {
         self::requireSqlite();

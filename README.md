@@ -18,6 +18,14 @@ The session model, persistence, and oldest-session ordering all use this value;
 credential rotation preserves it. There is no `auth_sessions.created_at` column.
 The independent `created_at` of pre-authentication transactions is retained.
 
+A `touch()` at or before the observed activity time has no effect. Rotation uses
+the later of the local clock and the loaded row's activity time, including when
+the caller holds an older snapshot. This preserves the session's timeline across
+clock skew without failing after a reauthentication proof has been consumed.
+A reauthentication time ahead of the wall clock does not satisfy a freshness
+requirement until that clock catches up. Non-reauthentication rotation still
+cannot extend the absolute expiry.
+
 This is the first stable schema for this package. Applications using an earlier
 development snapshot must regenerate their application-owned schema migration
 to remove `auth_sessions.created_at` before adopting the new adapter. Preserve
