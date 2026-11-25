@@ -30,6 +30,8 @@ final readonly class CredentialKeyring
             );
         }
 
+        $ownedKeys = [];
+
         foreach ($keys as $id => $key) {
             if (
                 preg_match('/\A[a-zA-Z0-9._-]{1,64}\z/D', $id) !== 1
@@ -40,9 +42,12 @@ final readonly class CredentialKeyring
                     'Session credential keyring contains an invalid key.',
                 );
             }
+
+            // Key rotation requires a new keyring, not mutation through an input alias.
+            $ownedKeys[$id] = $key;
         }
 
-        $this->keys = $keys;
+        $this->keys = $ownedKeys;
     }
 
     /** @return array{currentKeyId: string, keys: string} */
