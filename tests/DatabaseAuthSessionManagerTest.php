@@ -20,6 +20,97 @@ use Psr\Clock\ClockInterface;
 
 final class DatabaseAuthSessionManagerTest extends TestCase
 {
+    /** @return iterable<string, array{?RotationReason}> */
+    public static function activityRenewals(): iterable
+    {
+        yield 'activity' => [null];
+        yield 'privilege change' => [RotationReason::PrivilegeChange];
+        yield 'security event' => [RotationReason::SecurityEvent];
+    }
+
+    #[DataProvider('activityRenewals')]
+    public function testActivityRenewalPreservesTheAbsoluteExpiryCap(
+        ?RotationReason $rotationReason,
+    ): void {
+        self::requireSqlite();
+        $clock = new FrozenClock('2030-01-01T00:00:00.900000+00:00', 'UTC');
+        $manager = new DatabaseAuthSessionManager(
+            SqliteDatabaseFixture::create(),
+            new UuidFactory(),
+            $clock,
+            new CredentialKeyring('k1', ['k1' => str_repeat('k', 32)]),
+        );
+        $evidence = new AuthenticationEvidence(['password']);
+        $grant = $manager->create(
+            (new UuidFactory())->generate(),
+            $evidence,
+            new AuthSessionPolicy(10, 11),
+        );
+
+        $clock->freeze('2030-01-01T00:00:02.100000+00:00');
+        $manager->touch($grant->session);
+        $capped = $manager->resume($grant->credential);
+        self::assertNotNull($capped);
+        self::assertEquals($capped->absoluteExpiresAt, $capped->idleExpiresAt);
+
+        $clock->advance('+100000 microseconds');
+        $credential = $grant->credential;
+
+        if ($rotationReason === null) {
+            $manager->touch($capped);
+        } else {
+            $credential = $manager->rotate($capped, $evidence, $rotationReason)->credential;
+        }
+
+        $renewed = $manager->resume($credential);
+        self::assertNotNull($renewed);
+        self::assertEquals($capped->idleExpiresAt, $renewed->idleExpiresAt);
+        self::assertEquals($clock->now(), $renewed->lastActiveAt);
+
+        $clock->freeze('2030-01-01T00:00:11.899999+00:00');
+        self::assertNotNull($manager->resume($credential));
+        $clock->advance('+1 microsecond');
+        self::assertNull($manager->resume($credential));
+    }
+
+    #[DataProvider('activityRenewals')]
+    public function testActivityRenewalPreservesElapsedTimeoutAcrossCalendarMonths(
+        ?RotationReason $rotationReason,
+    ): void {
+        self::requireSqlite();
+        $clock = new FrozenClock('2030-01-15T00:00:00.900000+00:00', 'UTC');
+        $manager = new DatabaseAuthSessionManager(
+            SqliteDatabaseFixture::create(),
+            new UuidFactory(),
+            $clock,
+            new CredentialKeyring('k1', ['k1' => str_repeat('k', 32)]),
+        );
+        $evidence = new AuthenticationEvidence(['password']);
+        $grant = $manager->create(
+            (new UuidFactory())->generate(),
+            $evidence,
+            new AuthSessionPolicy(31 * 86400, 90 * 86400),
+        );
+        $clock->freeze('2030-02-01T00:00:00.100000+00:00');
+        $credential = $grant->credential;
+
+        if ($rotationReason === null) {
+            $manager->touch($grant->session);
+        } else {
+            $credential = $manager->rotate($grant->session, $evidence, $rotationReason)->credential;
+        }
+
+        $renewed = $manager->resume($credential);
+        self::assertNotNull($renewed);
+        self::assertEquals($clock->now()->modify('+31 days'), $renewed->idleExpiresAt);
+        self::assertEquals($grant->session->absoluteExpiresAt, $renewed->absoluteExpiresAt);
+
+        $clock->freeze('2030-03-04T00:00:00.099999+00:00');
+        self::assertNotNull($manager->resume($credential));
+        $clock->advance('+1 microsecond');
+        self::assertNull($manager->resume($credential));
+    }
+
     /** @return iterable<string, array{RotationReason, int}> */
     public static function rotationReasons(): iterable
     {

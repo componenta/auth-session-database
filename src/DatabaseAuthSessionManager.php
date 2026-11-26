@@ -23,6 +23,7 @@ use Cycle\Database\DatabaseInterface;
 use Cycle\Database\Injection\Fragment;
 use Cycle\Database\Query\OnConflict;
 use Cycle\Database\Query\UpdateQuery;
+use DateInterval;
 use DateTimeImmutable;
 use DateTimeZone;
 use Psr\Clock\ClockInterface;
@@ -177,12 +178,9 @@ final readonly class DatabaseAuthSessionManager implements
             return;
         }
 
-        $idleWindow = max(
-            1,
-            $observed->idleExpiresAt->getTimestamp()
-                - $observed->lastActiveAt->getTimestamp(),
+        $idleExpiresAt = $now->add(
+            self::idleWindow($observed->lastActiveAt, $observed->idleExpiresAt),
         );
-        $idleExpiresAt = $now->modify(sprintf('+%d seconds', $idleWindow));
 
         if ($idleExpiresAt > $observed->absoluteExpiresAt) {
             $idleExpiresAt = $observed->absoluteExpiresAt;
@@ -271,21 +269,18 @@ final readonly class DatabaseAuthSessionManager implements
                     );
                 }
 
-                $idleWindow = $policy->idleTimeout;
+                $idleWindow = new DateInterval(sprintf('PT%dS', $policy->idleTimeout));
                 $absoluteExpiresAt = $now->modify(
                     sprintf('+%d seconds', $policy->absoluteTimeout),
                 );
             } else {
                 $idleWindow = $policy !== null
-                    ? $policy->idleTimeout
-                    : max(
-                        1,
+                    ? new DateInterval(sprintf('PT%dS', $policy->idleTimeout))
+                    : self::idleWindow(
+                        $lastActiveAt,
                         $this->date(
                             self::stringValue($row, 'idle_expires_at'),
-                        )->getTimestamp()
-                            - $this->date(
-                                self::stringValue($row, 'last_active_at'),
-                            )->getTimestamp(),
+                        ),
                     );
 
                 if ($policy !== null) {
@@ -299,9 +294,7 @@ final readonly class DatabaseAuthSessionManager implements
                 }
             }
 
-            $idleExpiresAt = $now->modify(
-                sprintf('+%d seconds', $idleWindow),
-            );
+            $idleExpiresAt = $now->add($idleWindow);
 
             if ($idleExpiresAt > $absoluteExpiresAt) {
                 $idleExpiresAt = $absoluteExpiresAt;
@@ -637,6 +630,23 @@ final readonly class DatabaseAuthSessionManager implements
     private function now(): DateTimeImmutable
     {
         return $this->clock->now()->setTimezone(new DateTimeZone('UTC'));
+    }
+
+    private static function idleWindow(
+        DateTimeImmutable $lastActiveAt,
+        DateTimeImmutable $idleExpiresAt,
+    ): DateInterval {
+        $timezone = new DateTimeZone('UTC');
+        $interval = $lastActiveAt->setTimezone($timezone)->diff(
+            $idleExpiresAt->setTimezone($timezone),
+        );
+        // Timeouts are elapsed durations, not calendar month/year changes.
+        // A diff always supplies total days; retain its time and microseconds.
+        $interval->y = 0;
+        $interval->m = 0;
+        $interval->d = (int) $interval->days;
+
+        return $interval;
     }
 
     private function format(DateTimeImmutable $value): string
