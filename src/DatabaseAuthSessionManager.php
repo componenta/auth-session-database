@@ -186,18 +186,43 @@ final readonly class DatabaseAuthSessionManager implements
             $idleExpiresAt = $observed->absoluteExpiresAt;
         }
 
-        $this->database->update($this->config->sessionTable)
-            ->where('uuid', $observed->uuid->toString())
-            ->where('credential_generation', $observed->credentialGeneration)
-            ->where('last_active_at', $this->format($observed->lastActiveAt))
-            ->where('revoked_at', null)
-            ->where('idle_expires_at', '>', $this->format($now))
-            ->where('absolute_expires_at', '>', $this->format($now))
-            ->values([
-                'last_active_at' => $this->format($now),
-                'idle_expires_at' => $this->format($idleExpiresAt),
-            ])
-            ->run();
+        $this->database->begin();
+        $committed = false;
+
+        try {
+            $affected = $this->database->update($this->config->sessionTable)
+                ->where('uuid', $observed->uuid->toString())
+                ->where('credential_generation', $observed->credentialGeneration)
+                ->where('last_active_at', $this->format($observed->lastActiveAt))
+                ->where('revoked_at', null)
+                ->where('idle_expires_at', '>', $this->format($now))
+                ->where('absolute_expires_at', '>', $this->format($now))
+                ->values([
+                    'last_active_at' => $this->format($now),
+                    'idle_expires_at' => $this->format($idleExpiresAt),
+                ])
+                ->run();
+
+            if ($affected === 1) {
+                $completedAt = $this->now();
+
+                // A conditional write may wait after its timestamp was bound.
+                // Roll back this renewal before it can revive an expired row.
+                if (
+                    $observed->idleExpiresAt <= $completedAt
+                    || $observed->absoluteExpiresAt <= $completedAt
+                ) {
+                    return;
+                }
+            }
+
+            $this->database->commit();
+            $committed = true;
+        } finally {
+            if (!$committed) {
+                $this->database->rollback();
+            }
+        }
     }
 
     #[\Override]

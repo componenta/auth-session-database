@@ -21,6 +21,12 @@ The session model, persistence, and oldest-session ordering all use this value;
 credential rotation preserves it. There is no `auth_sessions.created_at` column.
 The independent `created_at` of pre-authentication transactions is retained.
 
+A delayed `touch()` cannot renew an expired session. Its conditional UPDATE is
+checked against the original idle and absolute deadlines before commit; a late
+write rolls back its own transaction or savepoint, preserving the caller's other
+changes. A renewal accepted before the old deadline remains valid if the COMMIT
+acknowledgment arrives later. This adds transaction control without another SELECT.
+
 A `touch()` at or before the observed activity time has no effect. Rotation uses
 the later of the local clock and the loaded row's activity time, including when
 the caller holds an older snapshot. This preserves the session's timeline across
