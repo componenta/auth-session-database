@@ -112,6 +112,12 @@ final readonly class DatabasePreAuthenticationManager implements
             return null;
         }
 
+        // A delete may have waited for a conflicting transaction after the
+        // timestamp was bound. An expired proof must not authorize the caller.
+        if ($this->date(self::stringValue($row, 'expires_at')) <= $this->now()) {
+            return null;
+        }
+
         return new PreAuthenticationTransaction(
             Uuid::fromString($uuid),
             $this->date(self::stringValue($row, 'created_at')),
