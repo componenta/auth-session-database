@@ -27,6 +27,13 @@ write rolls back its own transaction or savepoint, preserving the caller's other
 changes. A renewal accepted before the old deadline remains valid if the COMMIT
 acknowledgment arrives later. This adds transaction control without another SELECT.
 
+Rotation also rechecks the loaded session's original idle and absolute deadlines
+after its UPDATE, before commit. A late write throws `InvalidArgumentException`
+and rolls back both the new credential generation and its revocation tombstone.
+The caller's outer transaction is preserved through a savepoint. A timely
+rotation remains valid if only the COMMIT acknowledgment is delayed; the check
+adds no SQL queries and does not extend the lifetime of an expired session.
+
 A `touch()` at or before the observed activity time has no effect. Rotation uses
 the later of the local clock and the loaded row's activity time, including when
 the caller holds an older snapshot. This preserves the session's timeline across

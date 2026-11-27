@@ -374,6 +374,14 @@ final readonly class DatabaseAuthSessionManager implements
                 );
             }
 
+            // The write may wait after the original deadlines were checked.
+            // Reject before commit so both the rotation and tombstone roll back.
+            if (!$this->isActiveRow($row, $this->now())) {
+                throw new \InvalidArgumentException(
+                    'Authentication session is unavailable.',
+                );
+            }
+
             return new AuthSessionGrant(
                 new AuthSession(
                     $observed->uuid,
@@ -652,6 +660,11 @@ final readonly class DatabaseAuthSessionManager implements
         );
     }
 
+    /**
+     * Clock readings can advance between calls on the same manager.
+     *
+     * @phpstan-impure
+     */
     private function now(): DateTimeImmutable
     {
         return $this->clock->now()->setTimezone(new DateTimeZone('UTC'));
