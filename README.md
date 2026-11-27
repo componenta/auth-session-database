@@ -2,6 +2,9 @@
 
 Cycle Database persistence for `componenta/auth-session`.
 
+Version 2 requires `componenta/auth ^4.0.0`, `componenta/auth-session ^2.0.0`
+and `componenta/identity ^1.1.1`.
+
 Security properties:
 
 - raw `SessionCredential` values are never stored;
@@ -26,8 +29,12 @@ A reauthentication time ahead of the wall clock does not satisfy a freshness
 requirement until that clock catches up. Non-reauthentication rotation still
 cannot extend the absolute expiry.
 
-This is the first stable schema for this package. Applications using an earlier
-development snapshot must regenerate their application-owned schema migration
-to remove `auth_sessions.created_at` before adopting the new adapter. Preserve
-`authenticated_at` and all other session data. The package does not run migrations
-or modify an application's database on installation.
+Version 2 retains the schema published with version 1. Applications using a
+pre-1.0 development snapshot must update their application-owned schema migration
+to remove `auth_sessions.created_at`. Preserve `authenticated_at` and all other
+session data. The package does not run migrations or modify an application's
+database on installation.
+
+Pre-authentication consumption rejects a proof that expires while its atomic
+claim is waiting for the database. Such a proof cannot authorize the caller even
+when the request began before its expiry.

@@ -41,7 +41,8 @@
     "extra": {
         "branch-alias": {
             "dev-main": "1.0.x-dev",
-            "dev-release/auth-dependency-baseline-2026-11-26": "2.0.x-dev"
+            "dev-release/auth-dependency-baseline-2026-11-26": "2.0.x-dev",
+            "dev-fix/auth-dependency-audit-2026-11-27": "2.0.x-dev"
         }
     },
     "config": {
